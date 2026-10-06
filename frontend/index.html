@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Case URLs carry identifiers. Never leak them to a third party through
+         the Referer header. The document-level CSP is served by the static host
+         (see backend/security/web/security-headers.conf) because a policy has to
+         travel with the document it protects. -->
+    <meta name="referrer" content="no-referrer" />
+    <title>Context Guard — Financial Intelligence Platform</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

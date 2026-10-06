@@ -1,0 +1,59 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+dist/
+build/
+*.so
+.Python
+*.whl
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env
+.env.local
+.env.*
+
+# Node
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/*.tsbuildinfo
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+# IDE + OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Tool-local session artifacts (not project source)
+.freebuff/
+
+# Dev-tool scratch logs created by earlier run attempts in this checkout.
+# These are not project source. The names below cover both ordinary logs and the
+# tool-prefixed scratch logs (e.g. ...freebuffflask.log) left in backend/ and
+# frontend/.
+*.log
+*.log.err
+freebuff*.log
+freebuff*.log.err
+
+# Local scratch run logs from this session (optional — leave commented if you
+# prefer to keep them locally).
+# gate_*.out
+# build_*.out
+
+# Environment / secrets
+*.env
+.env.*
+!.env.example
+"gate_*.out" 
+"build_*.out" 

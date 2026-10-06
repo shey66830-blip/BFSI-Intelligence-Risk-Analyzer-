@@ -1,0 +1,20 @@
+{
+  "name": "context-guard",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Consent-driven, privacy-aware financial risk intelligence and investigation platform",
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:api": "cd backend && python app.py",
+    "dev:web": "cd frontend && npm run dev -- --host 127.0.0.1 --port 3000",
+    "install:web": "cd frontend && npm install",
+    "seed": "cd backend && python reset_demo.py",
+    "build": "cd frontend && npm run build",
+    "test": "node scripts/test.mjs",
+    "test:pipeline": "node scripts/test.mjs pipeline",
+    "test:rbac": "node scripts/test.mjs rbac",
+    "test:workflow": "node scripts/test.mjs workflow",
+    "test:security": "node scripts/test.mjs security"
+  }
+}

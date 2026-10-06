@@ -1,0 +1,1052 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Context Guard — How It Works</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0a0e1a;
+      --bg-raised: #111827;
+      --bg-card: #1a2235;
+      --bg-card-hover: #1e2a40;
+      --border: #2a3650;
+      --border-light: #374766;
+      --text: #e8edf5;
+      --text-secondary: #8899b4;
+      --text-muted: #5c6f8a;
+      --blue: #3b82f6;
+      --blue-light: #60a5fa;
+      --green: #22c55e;
+      --yellow: #eab308;
+      --orange: #f97316;
+      --red: #ef4444;
+      --purple: #a855f7;
+      --purple-dim: #7c3aed;
+      --font-sans: 'Inter', -apple-system, sans-serif;
+      --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+      --radius: 8px;
+      --radius-lg: 12px;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: var(--font-sans);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Sidebar nav ─────────────────────────── */
+    .sidebar {
+      position: fixed; top: 0; left: 0; width: 260px; height: 100vh;
+      background: var(--bg-raised);
+      border-right: 1px solid var(--border);
+      padding: 24px 0;
+      overflow-y: auto;
+      z-index: 100;
+    }
+    .sidebar-brand {
+      padding: 0 20px 20px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 16px;
+    }
+    .sidebar-brand h1 {
+      font-size: 18px; font-weight: 800; letter-spacing: -0.02em;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .sidebar-brand h1 .logo {
+      width: 32px; height: 32px;
+      background: linear-gradient(135deg, var(--blue), var(--purple));
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px; font-weight: 700; color: white;
+    }
+    .sidebar-brand p {
+      font-size: 11px; color: var(--text-muted);
+      text-transform: uppercase; letter-spacing: 0.08em; margin-top: 4px;
+    }
+    .nav-group { margin-bottom: 8px; }
+    .nav-group-title {
+      font-size: 10px; font-weight: 700; color: var(--text-muted);
+      text-transform: uppercase; letter-spacing: 0.08em;
+      padding: 8px 20px 4px;
+    }
+    .nav-link {
+      display: block; padding: 6px 20px 6px 28px;
+      font-size: 13px; color: var(--text-secondary);
+      text-decoration: none; transition: all 0.15s;
+      border-left: 2px solid transparent;
+    }
+    .nav-link:hover { color: var(--text); background: var(--bg-card); }
+    .nav-link.active {
+      color: var(--blue-light); border-left-color: var(--blue);
+      background: rgba(59,130,246,0.06);
+    }
+
+    /* ── Main content ────────────────────────── */
+    .main { margin-left: 260px; padding: 48px 64px 120px; max-width: 960px; }
+
+    /* Hero */
+    .hero {
+      margin-bottom: 56px;
+      padding-bottom: 40px;
+      border-bottom: 1px solid var(--border);
+    }
+    .hero h1 {
+      font-size: 40px; font-weight: 800; letter-spacing: -0.03em;
+      line-height: 1.15; margin-bottom: 16px;
+    }
+    .hero h1 span { color: var(--blue-light); }
+    .hero .subtitle {
+      font-size: 18px; color: var(--text-secondary); line-height: 1.6;
+      max-width: 640px;
+    }
+    .hero .badges { display: flex; gap: 8px; margin-top: 20px; flex-wrap: wrap; }
+    .badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 12px; border-radius: 20px;
+      font-size: 11px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.04em;
+    }
+    .badge-blue { background: rgba(59,130,246,0.12); color: var(--blue-light); border: 1px solid rgba(59,130,246,0.25); }
+    .badge-green { background: rgba(34,197,94,0.12); color: var(--green); border: 1px solid rgba(34,197,94,0.25); }
+    .badge-purple { background: rgba(168,85,247,0.12); color: var(--purple); border: 1px solid rgba(168,85,247,0.25); }
+
+    /* Section headings */
+    .section { margin-bottom: 56px; }
+    .section h2 {
+      font-size: 26px; font-weight: 800; letter-spacing: -0.02em;
+      margin-bottom: 8px;
+      scroll-margin-top: 24px;
+    }
+    .section h2 .num {
+      font-family: var(--font-mono); font-size: 14px; color: var(--text-muted);
+      margin-right: 8px;
+    }
+    .section h3 {
+      font-size: 18px; font-weight: 700; margin: 28px 0 8px;
+      scroll-margin-top: 24px;
+    }
+    .section-lead {
+      font-size: 15px; color: var(--text-secondary); margin-bottom: 20px;
+      max-width: 720px;
+    }
+
+    /* Cards */
+    .card-grid {
+      display: grid; gap: 16px;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    }
+    .card {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); padding: 20px;
+      transition: border-color 0.2s;
+    }
+    .card:hover { border-color: var(--border-light); }
+    .card h4 { font-size: 15px; font-weight: 700; margin-bottom: 6px; }
+    .card p { font-size: 13px; color: var(--text-secondary); line-height: 1.6; }
+    .card .card-icon { font-size: 24px; margin-bottom: 10px; }
+
+    /* Pipeline flow */
+    .pipeline {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); padding: 24px; margin: 20px 0;
+    }
+    .pipeline-title {
+      font-size: 14px; font-weight: 700; margin-bottom: 16px;
+      text-transform: uppercase; letter-spacing: 0.05em; color: var(--blue-light);
+    }
+    .flow-steps { display: flex; flex-direction: column; gap: 0; }
+    .flow-step {
+      display: flex; align-items: flex-start; gap: 16px;
+      padding: 14px 0;
+      border-left: 2px solid var(--border);
+      margin-left: 11px; padding-left: 24px;
+      position: relative;
+    }
+    .flow-step::before {
+      content: attr(data-step);
+      position: absolute; left: -12px; top: 14px;
+      width: 22px; height: 22px;
+      background: var(--bg); border: 2px solid var(--blue);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 10px; font-weight: 700; color: var(--blue-light);
+    }
+    .flow-step.done::before { background: var(--blue); color: white; }
+    .flow-step.no::before { border-color: var(--green); background: var(--green); color: white; content: "NO"; font-size: 7px; }
+    .flow-step:last-child { border-left-color: transparent; }
+    .flow-step-title { font-size: 14px; font-weight: 600; }
+    .flow-step-desc { font-size: 12.5px; color: var(--text-secondary); margin-top: 2px; line-height: 1.5; }
+    .flow-branch {
+      margin: 8px 0 8px 36px; padding: 10px 16px;
+      border-left: 3px solid var(--green); border-radius: 0 var(--radius) var(--radius) 0;
+      background: rgba(34,197,94,0.05); font-size: 12.5px; color: var(--text-secondary);
+    }
+    .flow-branch.investigate { border-left-color: var(--red); background: rgba(239,68,68,0.05); }
+    .flow-branch strong { color: var(--text); }
+
+    /* Code / monospace */
+    code, .mono {
+      font-family: var(--font-mono); font-size: 12px;
+    }
+    code {
+      background: var(--bg-card); padding: 2px 7px; border-radius: 4px;
+      border: 1px solid var(--border); color: var(--blue-light);
+    }
+    pre {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 16px 20px;
+      overflow-x: auto; font-size: 12.5px; line-height: 1.7;
+      margin: 12px 0;
+    }
+    pre code { background: none; border: none; padding: 0; color: var(--text); }
+
+    /* Tables */
+    table {
+      width: 100%; border-collapse: collapse; font-size: 13px;
+      margin: 12px 0;
+    }
+    th {
+      text-align: left; padding: 10px 14px; font-size: 11px;
+      font-weight: 700; color: var(--text-muted);
+      text-transform: uppercase; letter-spacing: 0.06em;
+      border-bottom: 2px solid var(--border);
+    }
+    td {
+      padding: 10px 14px; border-bottom: 1px solid var(--border);
+      color: var(--text-secondary); vertical-align: top;
+    }
+    tr:hover td { background: rgba(26,34,53,0.6); }
+
+    /* Lists */
+    ul, ol { padding-left: 20px; margin: 8px 0; }
+    li { font-size: 14px; color: var(--text-secondary); margin-bottom: 6px; line-height: 1.6; }
+    li strong { color: var(--text); }
+
+    /* Callout boxes */
+    .callout {
+      padding: 16px 20px; border-radius: var(--radius);
+      border-left: 3px solid var(--blue); background: rgba(59,130,246,0.05);
+      margin: 16px 0; font-size: 13.5px; color: var(--text-secondary); line-height: 1.6;
+    }
+    .callout.warn { border-left-color: var(--yellow); background: rgba(234,179,8,0.05); }
+    .callout.success { border-left-color: var(--green); background: rgba(34,197,94,0.05); }
+    .callout strong { color: var(--text); }
+
+    /* Confidence dimensions visual */
+    .dim-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0;
+    }
+    .dim-box {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 16px;
+    }
+    .dim-box h5 { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+    .dim-box .dim-score {
+      font-family: var(--font-mono); font-size: 28px; font-weight: 700;
+      margin: 6px 0;
+    }
+    .dim-box .dim-question { font-size: 11.5px; color: var(--text-muted); }
+    .dim-bar { height: 6px; border-radius: 3px; background: var(--bg); margin-top: 8px; overflow: hidden; }
+    .dim-bar-fill { height: 100%; border-radius: 3px; }
+
+    /* Architecture diagram */
+    .arch {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); padding: 24px; margin: 20px 0;
+      font-family: var(--font-mono); font-size: 12.5px; line-height: 1.8;
+      white-space: pre; overflow-x: auto; color: var(--text-secondary);
+    }
+    .arch strong { color: var(--text); }
+
+    /* Responsive */
+    @media (max-width: 900px) {
+      .sidebar { display: none; }
+      .main { margin-left: 0; padding: 24px; }
+      .hero h1 { font-size: 28px; }
+      .dim-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════ SIDEBAR ═══════════════════ -->
+<nav class="sidebar">
+  <div class="sidebar-brand">
+    <h1><span class="logo">CG</span> Context Guard</h1>
+    <p>How It Works</p>
+  </div>
+  <div class="nav-group">
+    <div class="nav-group-title">Overview</div>
+    <a class="nav-link active" href="#overview">What is Context Guard</a>
+    <a class="nav-link" href="#principles">Design principles</a>
+    <a class="nav-link" href="#scope">Current scope</a>
+  </div>
+  <div class="nav-group">
+    <div class="nav-group-title">Architecture</div>
+    <a class="nav-link" href="#architecture">System overview</a>
+    <a class="nav-link" href="#tech-stack">Tech stack</a>
+    <a class="nav-link" href="#data">Data &amp; privacy</a>
+  </div>
+  <div class="nav-group">
+    <div class="nav-group-title">Pipeline</div>
+    <a class="nav-link" href="#pipeline">12-stage flow</a>
+    <a class="nav-link" href="#gate">The anomaly gate</a>
+    <a class="nav-link" href="#correlation">Evidence correlation</a>
+    <a class="nav-link" href="#report">Investigation report</a>
+    <a class="nav-link" href="#confidence">Confidence scoring</a>
+    <a class="nav-link" href="#decision">Human decision</a>
+  </div>
+  <div class="nav-group">
+    <div class="nav-group-title">Risk Engine</div>
+    <a class="nav-link" href="#signals">Signal types</a>
+    <a class="nav-link" href="#scoring">Scoring model</a>
+    <a class="nav-link" href="#flow-path">Fund-flow path</a>
+  </div>
+  <div class="nav-group">
+    <div class="nav-group-title">Demo</div>
+    <a class="nav-link" href="#cases">Demo cases</a>
+    <a class="nav-link" href="#getting-started">Getting started</a>
+    <a class="nav-link" href="#api">API reference</a>
+  </div>
+  <div class="nav-group">
+    <div class="nav-group-title">Access Control</div>
+    <a class="nav-link" href="#access">Accounts &amp; roles</a>
+    <a class="nav-link" href="#permissions">Permission matrix</a>
+    <a class="nav-link" href="#masking">Server-side masking</a>
+  </div>
+  <div class="nav-group">
+    <div class="nav-group-title">Roadmap</div>
+    <a class="nav-link" href="#future">Future scope</a>
+    <a class="nav-link" href="#production">Production path</a>
+  </div>
+</nav>
+
+<!-- ═══════════════════ MAIN ═══════════════════ -->
+<div class="main">
+
+<!-- Hero -->
+<div class="hero" id="overview">
+  <h1>Context Guard <span>How It Works</span></h1>
+  <p class="subtitle">
+    A consent-driven, privacy-aware intelligence layer that spots unusual transactions
+    but <strong>never labels them as fraud</strong>. Instead it flags, correlates, explains,
+    and lets a human decide.
+  </p>
+  <div class="badges">
+    <span class="badge badge-blue">No Fraud Labels</span>
+    <span class="badge badge-green">Explainable</span>
+    <span class="badge badge-purple">Consent-Driven</span>
+  </div>
+</div>
+
+<!-- ═══════ What is it ═══════ -->
+<div class="section" id="what">
+  <h2><span class="num">01</span> What Context Guard Does</h2>
+  <p class="section-lead">Context Guard sits between a transaction monitor and a human investigator. It does not replace either — it connects them.</p>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-icon">🔍</div>
+      <h4>Flags, not labels</h4>
+      <p>Transactions are scored with an explainable risk score and a recommendation. The system never outputs "fraud" — it outputs "investigate" with reasons.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">🏦</div>
+      <h4>Asks the banks</h4>
+      <p>When an anomaly is detected, Context Guard sends structured, consent-scoped requests to the relevant banks. Each bank searches its own records and returns structured findings — never raw customer data.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">🔗</div>
+      <h4>Correlates across banks</h4>
+      <p>The system links bank reports to each other and to the transaction trail. Findings are labelled "corroborated" only when two independent sources agree.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">📄</div>
+      <h4>Drafts the report</h4>
+      <p>An AI-drafted investigation report with confidence scores, citations, stated unknowns, and a clear disclaimer. An investigator reviews it and records a decision with their name and rationale.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ Principles ═══════ -->
+<div class="section" id="principles">
+  <h2><span class="num">02</span> Design Principles</h2>
+  <table>
+    <thead><tr><th>Principle</th><th>What it means in practice</th></tr></thead>
+    <tbody>
+      <tr><td><strong>No fraud labels</strong></td><td>Every output is a flag for investigation, a confidence score, and a recommendation — never a determination of guilt.</td></tr>
+      <tr><td><strong>Explainable</strong></td><td>Every risk score has visible, auditable reasons. The report lists what it established, what it didn't, and how confident it is in each.</td></tr>
+      <tr><td><strong>Consent-driven</strong></td><td>All data sharing requires active consent. The pipeline records the legal basis, retention period, and classification at every stage.</td></tr>
+      <td><strong>Bank-agnostic</strong></td><td>Mock APIs are designed as drop-in replacements for real bank endpoints. The same case workflow and explainability layer carries over to production.</td></tr>
+      <tr><td><strong>Privacy-aware</strong></td><td>No bank sees another bank's data. Reports contain structured findings only — not raw customer records, device lists, or account numbers.</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ═══════ Current scope ═══════ -->
+<div class="section" id="scope">
+  <h2><span class="num">03</span> Current Scope</h2>
+  <p class="section-lead">This is a working demo — synthetic data, mocked bank APIs, and a real pipeline that demonstrates every stage end-to-end.</p>
+
+  <div class="card-grid">
+    <div class="card">
+      <h4>✅ Built &amp; working</h4>
+      <ul>
+        <li>12-stage investigation pipeline with full trace</li>
+        <li>Anomaly gate with 3 routing branches</li>
+        <li>Cross-bank evidence correlation (7 checks)</li>
+        <li>AI-drafted report with 8 sections</li>
+        <li>Two-dimensional confidence scoring</li>
+        <li>Human decision recording with attribution</li>
+        <li>Live transaction simulation on the dashboard</li>
+        <li>Network graph visualization (vis-network)</li>
+        <li>3 curated demo cases + unlimited simulated cases</li>
+        <li>49 automated backend checks</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>🧪 Demo data</h4>
+      <ul>
+        <li>9 synthetic entities (individuals + businesses)</li>
+        <li>3 simulated banks (HDFC, ICICI, Axis)</li>
+        <li>6 device profiles</li>
+        <li>3 curated cases (low / context / investigation)</li>
+        <li>3 live-ingest scenarios (routine / high-value / coordinated)</li>
+        <li>No real customer data anywhere in the system</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ Architecture ═══════ -->
+<div class="section" id="architecture">
+  <h2><span class="num">04</span> System Architecture</h2>
+  <p class="section-lead">A React dashboard talks to a Flask backend that scores the transaction, orchestrates the 12-stage pipeline, expands the network graph and simulates bank endpoints — all of it persisted in MongoDB.</p>
+
+  <div class="arch">
+<strong>                    ┌────────────────────────────────┐</strong>
+<strong>                    │  React 18 + Vite (port 3000)   │</strong>
+<strong>                    │  Dashboard · Case Detail       │</strong>
+<strong>                    │  Pipeline · Graph · Reports    │</strong>
+<strong>                    │  Live Feed · Audit · Admin     │</strong>
+<strong>                    └───────────────┬────────────────┘</strong>
+<strong>                                    │ /api/*  (Vite proxy)</strong>
+<strong>                                    ▼</strong>
+<strong>                    ┌────────────────────────────────┐</strong>
+<strong>                    │  Flask backend (port 5000)     │</strong>
+<strong>                    │  routes/pipeline.py            │</strong>
+<strong>                    │    12-stage orchestrator       │</strong>
+<strong>                    │  services/graph_engine.py      │</strong>
+<strong>                    │    stage 5 network expansion   │</strong>
+<strong>                    │  services/mock_banks.py        │</strong>
+<strong>                    │    simulated bank endpoints    │</strong>
+<strong>                    │  middleware.py + services/     │</strong>
+<strong>                    │    users · audit · privacy     │</strong>
+<strong>                    └───────────────┬────────────────┘</strong>
+<strong>                                    │ pymongo</strong>
+<strong>                                    ▼</strong>
+<strong>                    ┌────────────────────────────────┐</strong>
+<strong>                    │  MongoDB · db context_guard    │</strong>
+<strong>                    │  entities · transactions       │</strong>
+<strong>                    │  cases · requests · evidence   │</strong>
+<strong>                    │  reports · audit · users       │</strong>
+<strong>                    └────────────────────────────────┘</strong></div>
+</div>
+
+<!-- ═══════ Tech stack ═══════ -->
+<div class="section" id="tech-stack">
+  <h2><span class="num">05</span> Tech Stack</h2>
+  <table>
+    <thead><tr><th>Layer</th><th>Technology</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Frontend</strong></td><td>React 18 + Vite</td><td>Fast HMR, modern JSX, zero config proxy to Flask</td></tr>
+      <tr><td><strong>Network graph</strong></td><td>vis-network / vis-data</td><td>Interactive graph with physics, bank-colored nodes, dashed suspicion links</td></tr>
+      <tr><td><strong>Backend</strong></td><td>Flask (Python)</td><td>Lightweight, test-client-friendly, easy to swap mock endpoints for real API calls</td></tr>
+      <tr><td><strong>Data</strong></td><td>MongoDB (<code>context_guard</code>)</td><td>Cases, evidence, requests, decisions and the audit trail are persisted, not held in memory</td></tr>
+      <tr><td><strong>Synthetic data</strong></td><td>Seeded demo dataset (<code>services/seed.py</code>)</td><td>Deterministic, reproducible scenarios that demonstrate every branch of the pipeline</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ═══════ Data & privacy ═══════ -->
+<div class="section" id="data">
+  <h2><span class="num">06</span> Data &amp; Privacy</h2>
+  <p class="section-lead">The demo uses fully synthetic data. The architecture is designed so that swapping in real bank APIs changes the data source without changing the pipeline.</p>
+
+  <div class="callout">
+    <strong>No real data.</strong> Every transaction, entity, device, and bank response in this demo is generated from deterministic templates. The numbers look realistic — they are not real people's money.
+  </div>
+
+  <h3 id="data-flow">Data flow during an investigation</h3>
+  <ol>
+    <li><strong>Transaction arrives</strong> — scored against the account's own baseline (leave-one-out, so an outlier can't hide inside its own mean)</li>
+    <li><strong>Gate decides</strong> — below 35%: routine. 35–65%: context request. Above 65%: full investigation.</li>
+    <li><strong>Request sent</strong> — structured, consent-scoped, with legal basis and retention policy attached</li>
+    <li><strong>Bank searches</strong> — each bank queries only its own records. No bank sees another bank's data.</li>
+    <li><strong>Reports returned</strong> — findings only, not raw customer data. Provenance envelope tracks what was asked and when.</li>
+    <li><strong>Correlation</strong> — system links reports to each other and to the transaction trail</li>
+    <li><strong>Report drafted</strong> — includes a "Data handling and consent" section documenting every disclosure</li>
+  </ol>
+</div>
+
+<!-- ═══════ Pipeline ═══════ -->
+<div class="section" id="pipeline">
+  <h2><span class="num">07</span> The 12-Stage Investigation Pipeline</h2>
+  <p class="section-lead">This is the core of Context Guard. Every case moves through the same explicit stages. Each one records what it did and on what evidence.</p>
+
+  <div class="pipeline">
+    <div class="pipeline-title">Pipeline Flow</div>
+    <div class="flow-steps">
+      <div class="flow-step done" data-step="1">
+        <div>
+          <div class="flow-step-title">Transaction occurs</div>
+          <div class="flow-step-desc">A new transaction is recorded at its originating bank. The system receives the transaction plus the account's recent history for context.</div>
+        </div>
+      </div>
+      <div class="flow-step done" data-step="2">
+        <div>
+          <div class="flow-step-title">Initial AI analysis</div>
+          <div class="flow-step-desc">Each transaction is scored against the account's own baseline using a leave-one-out method. Signals include velocity, amount deviation, geo inconsistency, device usage, structuring, crypto movement, and counterparty novelty. The account's aggregate activity is scored separately with a noisy-OR blend.</div>
+        </div>
+      </div>
+      <div class="flow-step done" data-step="3">
+        <div>
+          <div class="flow-step-title">Meaningful anomaly or pattern?</div>
+          <div class="flow-step-desc">The gate compares the aggregate score against the 35% threshold. This is the branch point.</div>
+        </div>
+      </div>
+
+      <div class="flow-branch">
+        <strong>NO — below 35%:</strong> Activity is consistent with the account's baseline. The gate closes. No bank is contacted. No case is opened. The trace explicitly records the stand-down.
+      </div>
+      <div class="flow-branch investigate">
+        <strong>YES — 35% or above:</strong> The pipeline continues. Between 35–65% it routes to the lighter "context verification" branch. Above 65% it routes to a full multi-bank investigation.
+      </div>
+
+      <div class="flow-step done" data-step="4">
+        <div>
+          <div class="flow-step-title">Investigation case created</div>
+          <div class="flow-step-desc">A case is created with derived title, entity/bank scope, triggering transaction, and the reasons. Cases created by the pipeline are marked <code>origin: "auto"</code>.</div>
+        </div>
+      </div>
+      <div class="flow-step done" data-step="5">
+        <div>
+          <div class="flow-step-title">Relevant banks identified</div>
+          <div class="flow-step-desc">The graph is expanded outward from the entity named on the case, then the banks are derived from the evidence trail rather than from a hardcoded list. Expansion follows two link types readable from the transaction record alone: a <strong>counterparty</strong> whose name resolves to a known entity, and a <strong>shared device</strong> used by another entity. It runs to two hops. In the coordinated scenario, one entity named on the case reaches two more and puts <strong>two</strong> banks in scope where the unexpanded case would have contacted one. Every entity added is stored on the case with the link that justified it, and the stage states the reasoning in plain language.</div>
+        </div>
+      </div>
+      <div class="flow-step done" data-step="6">
+        <div>
+          <div class="flow-step-title">Investigation request sent</div>
+          <div class="flow-step-desc">A structured, consent-scoped request goes to each bank. For the context branch, a lighter request with fewer fields is used. The request carries legal basis, retention policy, and data classification.</div>
+        </div>
+      </div>
+      <div class="flow-step done" data-step="7">
+        <div>
+          <div class="flow-step-title">Simulated banks analyze their own data</div>
+          <div class="flow-step-desc">Each bank searches only its own records. No bank sees another bank's transactions, customer list, or device data.</div>
+        </div>
+      </div>
+      <div class="flow-step done" data-step="8">
+        <div>
+          <div class="flow-step-title">Structured reports returned</div>
+          <div class="flow-step-desc">Banks answer with structured findings — not raw customer data. Every report carries a provenance envelope (request ID, timestamp, responding bank, disclosure note).</div>
+        </div>
+      </div>
+      <div class="flow-step done" data-step="9">
+        <div>
+          <div class="flow-step-title">Context + cross-bank evidence correlation</div>
+          <div class="flow-step-desc">Returned reports are linked to each other and to the transaction trail using 7 cross-referencing checks. Findings are labelled "corroborated" only when two independent sources agree.</div>
+        </div>
+      </div>
+      <div class="flow-step done" data-step="10">
+        <div>
+          <div class="flow-step-title">AI-generated investigation report</div>
+          <div class="flow-step-desc">Findings are drafted into an 8-section report with confidence scores, citations, stated unknowns, and a disclaimer. The drafter is template-based in the demo but has the same input/output contract as a production LLM call.</div>
+        </div>
+      </div>
+      <div class="flow-step done" data-step="11">
+        <div>
+          <div class="flow-step-title">Risk assessment</div>
+          <div class="flow-step-desc">Evidence is scored for escalation priority — as a flag, never a verdict. The assessment explicitly states it is "not a finding of wrongdoing."</div>
+        </div>
+      </div>
+      <div class="flow-step" data-step="12">
+        <div>
+          <div class="flow-step-title">Human / bank investigator decision</div>
+          <div class="flow-step-desc">A named investigator reviews the report and records one of four decisions (close / request more context / continue investigation / escalate to compliance/FIU). The decision requires an investigator name and a written rationale. The system never decides alone.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ The gate ═══════ -->
+<div class="section" id="gate">
+  <h2><span class="num">08</span> The Anomaly Gate</h2>
+  <p class="section-lead">The gate decides whether to open a case. It uses two thresholds to create three routes.</p>
+
+  <table>
+    <thead><tr><th>Score range</th><th>Route</th><th>What happens</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>&lt; 35%</code></td>
+        <td><strong>No action</strong></td>
+        <td>Gate closes. Nothing is shared. The trace records the stand-down with the score and reasons. No bank is ever contacted.</td>
+      </tr>
+      <tr>
+        <td><code>35–65%</code></td>
+        <td><strong>Context verification</strong></td>
+        <td>A consent-scoped context request goes to the bank holding the account. If the bank's response explains the anomaly, the score is adjusted downward. If it doesn't, the case escalates.</td>
+      </tr>
+      <tr>
+        <td><code>&gt; 65%</code></td>
+        <td><strong>Investigation</strong></td>
+        <td>Full multi-bank investigation: formal requests, cross-bank correlation, report, and decision.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <strong>Why two thresholds?</strong> A $47,000 wire from a small-business account needs context — but it doesn't need three banks and a compliance referral. The context branch sends a lighter, consent-scoped request to the holding bank and adjusts the score based on what comes back. Only broad, multi-bank patterns trigger the full investigation path.
+  </div>
+
+  <h3 id="context-resolution">Context resolution</h3>
+  <p>When the context branch is taken, the bank's response is checked for explanations and unresolved concerns:</p>
+  <ul>
+    <li><strong>Confirmations</strong> (each lowers the score): established relationship, KYC verified, active consent, matching invoice reference, etc.</li>
+    <li><strong>Unresolved</strong> (each raises the score): the bank's internal risk rating is elevated, no matching business context found.</li>
+  </ul>
+  <p>The adjusted score is shown in the report alongside the original, so the investigator can see how context changed the assessment.</p>
+</div>
+
+<!-- ═══════ Correlation ═══════ -->
+<div class="section" id="correlation">
+  <h2><span class="num">09</span> Cross-Bank Evidence Correlation</h2>
+  <p class="section-lead">This is where Context Guard's value is clearest: linking what each bank sees independently into a picture no single bank can see alone.</p>
+
+  <table>
+    <thead><tr><th>Check</th><th>What it looks for</th><th>Strength</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Shared counterparties</strong></td><td>A counterparty name appearing on transactions at multiple banks</td><td>Corroborated (multi-bank)</td></tr>
+      <tr><td><strong>Cross-bank entity reference</strong></td><td>Bank A names an entity whose transactions sit at Bank B</td><td>Corroborated</td></tr>
+      <tr><td><strong>Shared devices</strong></td><td>A device ID disclosed independently by more than one bank</td><td>Corroborated</td></tr>
+      <tr><td><strong>Ownership links</strong></td><td>Beneficial ownership flags or shared addresses disclosed by a bank</td><td>Single source</td></tr>
+      <tr><td><strong>Fund return loops</strong></td><td>Value sent from A to B and then back from B to A</td><td>Corroborated if multi-bank</td></tr>
+      <tr><td><strong>Endpoint convergence</strong></td><td>Multiple senders sending value to the same sink (e.g., crypto exchange)</td><td>Corroborated if multi-bank</td></tr>
+      <tr><td><strong>Timing proximity</strong></td><td>Transfers at different banks within 60 minutes of each other</td><td>Corroborated</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <strong>Corroborated vs single source.</strong> A finding is "corroborated" only when two independent banks provide evidence that supports it. "Single source" findings are included but clearly marked — they could be explained by information the system doesn't have.
+  </div>
+</div>
+
+<!-- ═══════ Report ═══════ -->
+<div class="section" id="report">
+  <h2><span class="num">10</span> The Investigation Report</h2>
+  <p class="section-lead">The report is the product a human investigator reads. It has 8 sections, a disclaimer, and a citation list.</p>
+
+  <table>
+    <thead><tr><th>Section</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Executive summary</strong></td><td>Plain-language overview of the pattern, how many banks are involved, and what can't be determined from the records.</td></tr>
+      <tr><td><strong>What the evidence shows</strong></td><td>The aggregated risk score and the signal types that contributed to it.</td></tr>
+      <tr><td><strong>Cross-bank correlation</strong></td><td>Each finding with its ID, strength, source banks, and what it means.</td></tr>
+      <tr><td><strong>Observed fund flow</strong></td><td>A chronological list of hops reconstructed from recorded counterparties, with timestamps and amounts.</td></tr>
+      <tr><td><strong>Context returned by the bank</strong></td><td>(Context branch only) What the bank confirmed and what remains unresolved.</td></tr>
+      <tr><td><strong>Confidence in this assessment</strong></td><td>Two dimensions — pattern confidence and intent confidence — with their basis.</td></tr>
+      <tr><td><strong>What this report does not establish</strong></td><td>Stated explicitly: unverified origins, unidentified end beneficiaries, single-bank-only accounts, unconfirmed device ownership, and the fundamental point that correlation is not intent.</td></tr>
+      <tr><td><strong>Recommended next steps</strong></td><td>Actionable: confirm beneficial owners, request invoices, clarify end recipients, obtain statements before any adverse action.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout warn">
+    <strong>The disclaimer.</strong> Every report ends with: "Context Guard flags and correlates for investigation. It does not determine that any person or business has committed an offence. Findings are indicators for a qualified human investigator to interpret, and the decision at stage 12 is theirs alone."
+  </div>
+</div>
+
+<!-- ═══════ Confidence ═══════ -->
+<div class="section" id="confidence">
+  <h2><span class="num">11</span> Confidence: Two Numbers, Not One</h2>
+  <p class="section-lead">A single confidence number would be misleading. A well-corroborated pattern can coexist with a completely unexplained purpose — and that gap is where the real risk of over-reading lives.</p>
+
+  <div class="dim-grid">
+    <div class="dim-box">
+      <h5>Pattern confidence</h5>
+      <div class="dim-score" style="color: var(--blue-light);">87%</div>
+      <div class="dim-bar"><div class="dim-bar-fill" style="width:87%; background: var(--blue);"></div></div>
+      <div class="dim-question">How well corroborated is the observed structure?</div>
+      <p style="font-size:12px; color:var(--text-secondary); margin-top:8px;">
+        Can legitimately be high: the transfers happened, and two banks agree on them. This measures evidence integrity, not wrongdoing.
+      </p>
+    </div>
+    <div class="dim-box">
+      <h5>Intent confidence</h5>
+      <div class="dim-score" style="color: var(--orange);">20%</div>
+      <div class="dim-bar"><div class="dim-bar-fill" style="width:20%; background: var(--orange);"></div></div>
+      <div class="dim-question">How well is the purpose understood?</div>
+      <p style="font-size:12px; color:var(--text-secondary); margin-top:8px;">
+        Deliberately low when nothing explains the movement. Context verification (stage 6) is the only way to raise it — the system can't assume intent from structure alone.
+      </p>
+    </div>
+  </div>
+
+  <div class="callout">
+    <strong>Why this matters.</strong> If you report "95% confidence" on a pattern whose purpose nobody has established, you're implicitly telling the investigator that the pattern is almost certainly bad. But it might be legitimate trade. Splitting pattern from intent makes the uncertainty honest.
+  </div>
+
+  <h3>How the overall score is computed</h3>
+  <p><code>overall = 0.6 × pattern + 0.4 × intent</code></p>
+  <p>Pattern confidence starts at 40% and adjusts based on: number of corroborated findings, whether multiple banks responded, the number of reconstructable hops, and consent verification. Intent confidence starts at 20% and adjusts based on contextual confirmations from the bank and unresolved concerns.</p>
+</div>
+
+<!-- ═══════ Decision ═══════ -->
+<div class="section" id="decision">
+  <h2><span class="num">12</span> The Human Decision (Stage 12)</h2>
+  <p class="section-lead">The pipeline never decides alone. Stage 12 requires a named investigator, a chosen action, and a written rationale.</p>
+
+  <table>
+    <thead><tr><th>Decision</th><th>What it means</th><th>Resulting status</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Close — activity explained</strong></td><td>The context or report explains the pattern. Record the rationale and close.</td><td><code>closed</code></td></tr>
+      <tr><td><strong>Request more context</strong></td><td>Hold the case open and ask the banks for the specific missing information.</td><td><code>context_verification</code></td></tr>
+      <tr><td><strong>Continue investigation</strong></td><td>Keep the case open for further analysis before any escalation.</td><td><code>investigation</code></td></tr>
+      <tr><td><strong>Escalate to compliance / FIU</strong></td><td>Refer the case with the report attached. Escalation is a referral, not a finding of guilt.</td><td><code>escalated</code></td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <strong>Validation.</strong> The system rejects decisions without a name or rationale (HTTP 400). It rejects decisions before a report exists (HTTP 409). It rejects invented verdicts like "declare fraud" — the only options are the four above. Every decision is recorded with the investigator's name, the rationale, and a timestamp.
+  </div>
+</div>
+
+<!-- ═══════ Signals ═══════ -->
+<div class="section" id="signals">
+  <h2><span class="num">13</span> Risk Engine — Signal Types</h2>
+  <p class="section-lead">The risk engine detects 11 independent signal types across six categories. Each signal is explainable and has a severity.</p>
+
+  <table>
+    <thead><tr><th>Signal</th><th>What it detects</th><th>Severity range</th></tr></thead>
+    <tbody>
+      <tr><td><code>rapid_successive</code></td><td>Transfers less than 30 minutes apart</td><td>Medium</td></tr>
+      <tr><td><code>amount_anomaly</code></td><td>Transaction more than 2.5 std deviations above the leave-one-out baseline</td><td>Medium / High</td></tr>
+      <tr><td><code>high_value_deviation</code></td><td>Amount is 10x+ the account's average and above $10,000</td><td>High</td></tr>
+      <tr><td><code>impossible_travel</code></td><td>Activity in two countries within 4 hours</td><td>High</td></tr>
+      <tr><td><code>unusual_device</code></td><td>First-time device used for a transaction</td><td>Low</td></tr>
+      <tr><td><code>potential_structuring</code></td><td>Multiple transactions just under reporting thresholds ($10K, $50K, $100K)</td><td>High</td></tr>
+      <tr><td><code>crypto_offramp</code></td><td>Outbound transfers to a crypto exchange — funds leave the regulated perimeter</td><td>High / Critical</td></tr>
+      <tr><td><code>crypto_round_trip</code></td><td>Value returns from the crypto exchange shortly after being sent</td><td>High</td></tr>
+      <tr><td><code>first_time_counterparty</code></td><td>Counterparty with no prior history in the reviewed window</td><td>Low</td></tr>
+      <tr><td><code>cross_bank_counterparty</code></td><td>Counterparty appearing across more than one bank</td><td>High</td></tr>
+      <tr><td><code>circular_flow</code></td><td>Complex fund flow pattern across multiple banks with return paths</td><td>Critical</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ═══════ Scoring ═══════ -->
+<div class="section" id="scoring">
+  <h2><span class="num">14</span> Scoring Model</h2>
+  <p class="section-lead">The aggregated activity score uses a noisy-OR blend so corroborating signals raise confidence while no single signal can ever reach certainty on its own.</p>
+
+  <h3>How it works</h3>
+  <p>Each signal type has a weight. Only distinct signal types contribute (duplicates are deduplicated, keeping the most severe instance). The survival probability is computed as:</p>
+  <pre><code>survival = 1.0
+for signal_type in distinct_types:
+    survival *= (1.0 - SIGNAL_WEIGHTS[signal_type])
+score = 1.0 - survival</code></pre>
+
+  <p>This means:</p>
+  <ul>
+    <li><strong>No single signal reaches certainty</strong> — the maximum contribution is capped by the weight</li>
+    <li><strong>Corroborating signals compound</strong> — two independent signals raise the score more than either alone</li>
+    <li><strong>The output is a 0–1 score</strong> that maps to the three gate routes</li>
+  </ul>
+
+  <h3 id="leave-one-out">Leave-one-out baseline</h3>
+  <p>When scoring a transaction against the account's history, the baseline (mean and standard deviation) is computed <em>without</em> the transaction being tested. This prevents a single outlier from inflating its own baseline and hiding itself — a real bug that was caught and fixed during development.</p>
+</div>
+
+<!-- ═══════ Fund flow ═══════ -->
+<div class="section" id="flow-path">
+  <h2><span class="num">15</span> Fund-Flow Path</h2>
+  <p class="section-lead">The system reconstructs the observable chain of transfers from the counterparty names recorded on each transaction.</p>
+
+  <p><code>build_flow_path()</code> produces:</p>
+  <ul>
+    <li><strong>hops</strong> — ordered list of from → to transfers with amounts, timestamps, and banks</li>
+    <li><strong>sources</strong> — labels that appear only as senders (value entering the pattern)</li>
+    <li><strong>sinks</strong> — labels that appear only as receivers (value leaving the pattern)</li>
+    <li><strong>cycles</strong> — pairs (A, B) where A → B and B → A both exist (circular flow)</li>
+    <li><strong>endpoint_totals</strong> — total value received by each sink</li>
+  </ul>
+
+  <div class="callout">
+    <strong>No private ledger access.</strong> The flow path is reconstructed from what each bank can already see on the transactions it processed. No bank's internal ledger is accessed or required.
+  </div>
+</div>
+
+<!-- ═══════ Demo cases ═══════ -->
+<div class="section" id="cases">
+  <h2><span class="num">16</span> Demo Cases</h2>
+  <p class="section-lead">Three curated cases demonstrate each branch of the pipeline, plus three live-ingest scenarios let you simulate new transactions.</p>
+
+  <h3>Curated cases (pre-loaded)</h3>
+  <table>
+    <thead><tr><th>Case</th><th>Risk</th><th>Route</th><th>What happens</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>Case 1 — Routine Spending</strong></td>
+        <td>5%</td>
+        <td>No action</td>
+        <td>Alice Chen's everyday transactions. Gate closes. No bank contacted. Pipeline stands down explicitly.</td>
+      </tr>
+      <tr>
+        <td><strong>Case 2 — High-Value Wire</strong></td>
+        <td>42%</td>
+        <td>Context verification</td>
+        <td>Bob Fitzgerald's $47,500 wire to Xenon Logistics. Context request sent to Northpoint Bank. Bank confirms 7-year relationship, KYC verified, matching invoice. Score drops from 42% to 15%. Recommended: close.</td>
+      </tr>
+      <tr>
+        <td><strong>Case 3 — Coordinated Cross-Bank</strong></td>
+        <td>87%</td>
+        <td>Investigation</td>
+        <td>Multi-entity, multi-bank fund movement through shell companies to a crypto exchange. Full investigation, 5 corroborated findings, report with 87% pattern / 20% intent confidence, network graph with suspicion links.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Live-ingest scenarios</h3>
+  <p>Available from the dashboard's "Transaction monitor" panel:</p>
+  <table>
+    <thead><tr><th>Scenario</th><th>What you see</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Routine</strong></td><td>A $16.80 card purchase. Gate closes at ~25%. No case opened. Shows the "NO" branch.</td></tr>
+      <tr><td><strong>High value</strong></td><td>A $47,500 wire. Gate opens at ~47%. Case created. Context verification branch.</td></tr>
+      <tr><td><strong>Coordinated</strong></td><td>A $40,000 crypto deposit continuing a cross-bank chain. Gate opens at ~80%. Full investigation case.</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ═══════ Getting started ═══════ -->
+<div class="section" id="getting-started">
+  <h2><span class="num">17</span> Getting Started</h2>
+  <p class="section-lead">Two terminals, no external services, no database setup.</p>
+
+  <h3>One command</h3>
+  <pre><code>npm run install:web                          # first time only
+pip install -r backend/requirements.txt      # first time only
+npm run dev                                  # both servers, Ctrl-C stops both</code></pre>
+  <p>Run this from the <strong>repository root</strong>. The backend is Flask (Python) and the frontend is Vite (Node) — two runtimes in two directories — so the launcher starts both and prefixes each log line with <code>[api]</code> or <code>[web]</code>. Typesetting <code>npm run dev</code> inside <code>backend/</code> fails with <code>ENOENT ... backend/package.json</code>, because that directory holds no Node project.</p>
+
+  <h3>Starting them separately</h3>
+  <pre><code>npm run dev:api     # cd backend &amp;&amp; python app.py
+npm run dev:web     # cd frontend &amp;&amp; vite --host 127.0.0.1 --port 3000</code></pre>
+  <p>Flask runs on <code>http://localhost:5000</code> and seeds the demo dataset on first start if it is empty. Vite runs on <code>http://127.0.0.1:3000</code> and proxies <code>/api</code> to Flask. Pass <code>--host 127.0.0.1</code> explicitly — the default <code>vite</code> binds IPv6 only, so <code>127.0.0.1</code> fails without it.</p>
+
+  <h3>Before a demo</h3>
+  <pre><code>npm run seed        # cd backend &amp;&amp; python reset_demo.py</code></pre>
+  <p>Restores the curated cases, the synthetic accounts and the default thresholds. Live ingests accumulate transactions, and each score is measured against the account's own baseline — so after the live feed has been clicked through a few times the coordinated scenario stops taking the investigation route. The test suites re-seed the same state on their own.</p>
+
+  <h3>Signing in</h3>
+  <p>The app opens on a login page. The four synthetic accounts are listed there and fill the form on click:</p>
+  <table>
+    <thead><tr><th>Username</th><th>Password</th><th>Role</th><th>Assigned cases</th></tr></thead>
+    <tbody>
+      <tr><td><code>analyst</code></td><td><code>analyst123</code></td><td>Analyst — Ananya Iyer</td><td>case_1, case_2</td></tr>
+      <tr><td><code>analyst2</code></td><td><code>analyst123</code></td><td>Analyst — Rohit Deshmukh</td><td>case_3</td></tr>
+      <tr><td><code>compliance</code></td><td><code>compliance123</code></td><td>Compliance Officer — Inspector R. Mehta</td><td>everything</td></tr>
+      <tr><td><code>admin</code></td><td><code>admin123</code></td><td>Organisation Admin — S. Nair</td><td>everything</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Running the tests</h3>
+  <pre><code>npm test                  # all three suites, from the repository root
+npm run test:rbac         # or one at a time</code></pre>
+  <p>The equivalent by hand, with <code>PYTHONIOENCODING=utf-8</code> so the ₹ and box-drawing output survives a Windows console:</p>
+  <pre><code>cd backend
+python test_pipeline.py   # all 12 stages, graph expansion, every scenario
+python test_rbac.py       # authentication, roles and scoping (78 checks)
+python test_workflow.py   # reports, evidence, access requests and audit (131 checks)</code></pre>
+  <p>The suites re-seed the demo dataset first so runs are repeatable, and they clear all
+  sessions — a signed-in browser tab will need to sign in again afterwards.</p>
+
+  <h3>What to do in the app</h3>
+  <ol>
+    <li><strong>Sign in as each role in turn</strong> — the sidebar, dashboard, case list and identifiers all change</li>
+    <li><strong>Dashboard → Transaction monitor</strong> — pick a scenario and click "Simulate transaction" to watch stages 1–4 run live</li>
+    <li><strong>Click "Open" on the created case</strong> — you're in the Pipeline tab with stages 1–4 done and 5–12 pending</li>
+    <li><strong>Click "Run pipeline"</strong> — watch stages 5–11 execute, then read the report</li>
+    <li><strong>Record a decision</strong> — fill in your name, pick a decision, write a rationale, submit</li>
+    <li><strong>Try Case 1</strong> — run the pipeline and watch it stand down at 5%</li>
+    <li><strong>Try Case 2</strong> — run the pipeline and see the context branch lower the score</li>
+  </ol>
+</div>
+
+<!-- ═══════ API ═══════ -->
+<div class="section" id="api">
+  <h2><span class="num">18</span> API Reference</h2>
+
+  <table>
+    <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>GET</code></td><td><code>/api/health</code></td><td>Health check</td></tr>
+      <tr><td><code>GET</code></td><td><code>/api/dashboard-stats</code></td><td>Aggregate stats (cases, txns, volume, banks, entities)</td></tr>
+      <tr><td><code>GET</code></td><td><code>/api/cases</code></td><td>List all cases with risk scores</td></tr>
+      <tr><td><code>GET</code></td><td><code>/api/cases/:id</code></td><td>Full case details with transactions, risk, and pipeline state</td></tr>
+      <tr><td><code>GET</code></td><td><code>/api/transactions</code></td><td>All transactions (optional <code>?case_id=</code> filter)</td></tr>
+      <tr><td><code>POST</code></td><td><code>/api/context-request</code></td><td>Send context verification to a bank (legacy endpoint)</td></tr>
+      <tr><td><code>POST</code></td><td><code>/api/investigation-request</code></td><td>Initiate formal investigation (legacy endpoint)</td></tr>
+      <tr><td><code>GET</code></td><td><code>/api/mock-bank-endpoints</code></td><td>List mock bank API info</td></tr>
+      <tr><td><code>GET</code></td><td><code>/api/requests</code></td><td>All bank requests sent during the session</td></tr>
+      <tr><td><code>GET</code></td><td><code>/api/pipeline/flow</code></td><td>Stage list, thresholds, scenarios, decision options</td></tr>
+      <tr><td><code>POST</code></td><td><code>/api/pipeline/ingest</code></td><td>Stages 1–4: analyse an incoming transaction, maybe open a case</td></tr>
+      <tr><td><code>POST</code></td><td><code>/api/pipeline/run</code></td><td>Stages 5–11: investigate a case and draft the report</td></tr>
+      <tr><td><code>GET</code></td><td><code>/api/cases/:id/report</code></td><td>The drafted report for a case</td></tr>
+      <tr><td><code>POST</code></td><td><code>/api/cases/:id/decision</code></td><td>Stage 12: record the investigator's decision (requires name + rationale)</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ═══════ Future ═══════ -->
+<div class="section" id="future">
+  <h2><span class="num">19</span> Future Scope</h2>
+  <p class="section-lead">The architecture is designed so that adding real capabilities does not require rewriting the pipeline.</p>
+
+  <div class="card-grid">
+    <div class="card">
+      <h4>🏦 Real bank APIs</h4>
+      <p>Replace <code>services/mock_banks.py</code> with OAuth2-authenticated API calls. The case workflow, correlation logic, and report structure carry over unchanged.</p>
+    </div>
+    <div class="card">
+      <h4>🧠 Production LLM</h4>
+      <p>Replace the template drafter with a real LLM call. The input (structured findings + confidence) and output (sectioned report) contract is identical.</p>
+    </div>
+    <div class="card">
+      <h4>🗄️ MongoDB at scale</h4>
+      <p>In place: every case, trace, report, decision, evidence item, access request and audit entry persists in MongoDB, with indexes on the fields the queries actually use. What remains is operational — replica sets, migrations, retention and archival policy.</p>
+    </div>
+    <div class="card">
+      <h4>📊 Historical analytics</h4>
+      <p>Track which signal types are most common, which contexts resolve anomalies, which decisions are taken — and feed that back into the scoring model.</p>
+    </div>
+    <div class="card">
+      <h4>🌐 Multi-jurisdiction</h4>
+      <p>Add regulatory frameworks per jurisdiction. Different thresholds, different consent models, different escalation paths (SAR, STR, FIU referral).</p>
+    </div>
+    <div class="card">
+      <h4>🔄 Real-time streaming</h4>
+      <p>Replace the demo's batch simulation with a streaming transaction feed. The pipeline stages execute on each incoming transaction, not just during demos.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ Production ═══════ -->
+<div class="section" id="production">
+  <h2><span class="num">20</span> Production Path</h2>
+  <p class="section-lead">When you have bank partnerships, the migration path is incremental — not a rewrite.</p>
+
+  <table>
+    <thead><tr><th>Step</th><th>What changes</th><th>What stays the same</th></tr></thead>
+    <tbody>
+      <tr><td><strong>1. Replace mock APIs</strong></td><td><code>services/mock_banks.py</code> → real HTTP calls with OAuth2/mTLS</td><td>Pipeline orchestration, request formats, report parsing</td></tr>
+      <tr><td><strong>2. Real identity</strong></td><td>Swap <code>/api/auth/login</code> for OIDC/SAML and map directory groups to the existing permission matrix</td><td>The permission matrix, session handling, case scoping and audit trail</td></tr>
+      <tr><td><strong>3. Bank-side auth</strong></td><td>OAuth2 or mTLS for outbound bank API access</td><td>Request/response structure</td></tr>
+      <tr><td><strong>4. Add rate limiting</strong></td><td>Per-bank rate limits and retry logic</td><td>Pipeline flow</td></tr>
+      <tr><td><strong>5. Deploy LLM</strong></td><td>Template drafter → production LLM</td><td>Input/output contract (findings in, report out)</td></tr>
+      <tr><td><strong>6. Hardening</strong></td><td>Password policy, MFA, session rotation, retention rules for the audit trail</td><td>Role model and audit record shape</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout success">
+    <strong>The key insight.</strong> The pipeline, correlation logic, report structure, confidence model, and decision workflow are all bank-agnostic. They operate on structured findings — they don't care whether those findings came from a mock or a real API. That's the whole point of the architecture.
+  </div>
+</div>
+
+<!-- ═══════ Access control ═══════ -->
+<div class="section" id="access">
+  <h2><span class="num">21</span> Accounts &amp; Roles</h2>
+  <p class="section-lead">Context Guard is a system that asks people to make decisions about other people. So the first question it answers is <em>who is allowed to see and do what</em>.</p>
+
+  <p>There is a single login page for everyone. After signing in, what you can reach is decided by your role — not by a setting you can change in the browser. Four synthetic accounts are provisioned on first start (shown on the login page, one click to fill the form). They exist so the demo can be driven from every seat at the table.</p>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-icon">👤</div>
+      <h4>Analyst</h4>
+      <p>Opens only the cases assigned to them. Customer identifiers arrive already masked, and the dashboard is a personal caseload rather than an organisation view. Can investigate a case and close it with a documented reason — but cannot escalate.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">🔍</div>
+      <h4>Compliance officer</h4>
+      <p>Lands on a review queue: every open case, ranked by risk, with real identifiers. Holds the escalation decision, can assign cases to analysts, and can read the organisation-wide audit trail.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">🛡️</div>
+      <h4>Organisation admin</h4>
+      <p>Gets the system overview plus the Administration section: create and suspend accounts, change roles, assign cases, tune the risk thresholds and privacy policy, and inspect every recorded action.</p>
+    </div>
+  </div>
+
+  <h3>Sessions</h3>
+  <p>Signing in mints an opaque token stored against the user in MongoDB; the browser sends it as a bearer token. Passwords are hashed with <code>werkzeug</code>, never stored or returned. Five failed attempts suspend the account. A role change, a suspension or a password reset revokes that user's existing sessions immediately — authority is re-read on every request, so a demotion takes effect on the next click, not the next login.</p>
+</div>
+
+<div class="section" id="permissions">
+  <h2><span class="num">22</span> Permission Matrix</h2>
+  <p class="section-lead">Routes ask for a permission, never for a role name. That one decision is what makes the model extensible.</p>
+
+  <table>
+    <thead><tr><th>Permission</th><th>Analyst</th><th>Compliance</th><th>Admin</th></tr></thead>
+    <tbody>
+      <tr><td><code>cases:view_assigned</code> / <code>cases:view_all</code></td><td>assigned only</td><td>all</td><td>all</td></tr>
+      <tr><td><code>cases:investigate</code></td><td>own cases</td><td>any case</td><td>any case</td></tr>
+      <tr><td><code>cases:decide_limited</code> / <code>cases:decide</code></td><td>limited</td><td>full</td><td>full</td></tr>
+      <tr><td><code>cases:assign</code></td><td>—</td><td>yes</td><td>yes</td></tr>
+      <tr><td><code>txn:view_unmasked</code></td><td>—</td><td>yes</td><td>yes</td></tr>
+      <tr><td><code>audit:view_own</code> / <code>audit:view_all</code></td><td>own</td><td>all</td><td>all</td></tr>
+      <tr><td><code>users:manage</code>, <code>settings:manage</code></td><td>—</td><td>—</td><td>yes</td></tr>
+    </tbody>
+  </table>
+
+  <p>Three examples of the matrix doing real work:</p>
+  <ul>
+    <li><strong>Case scoping.</strong> Opening a case that is not yours returns <code>403</code> and writes an <code>access_denied</code> entry to the audit trail — a blocked attempt is itself evidence.</li>
+    <li><strong>Escalation.</strong> The decision options are filtered per role, so an analyst sees three choices and a compliance officer sees four. The restricted option is refused server-side, not merely hidden.</li>
+    <li><strong>Settings that bind.</strong> Raising the anomaly gate in Risk Settings genuinely changes the gate: at a 55% gate the hospital payment scores 38% and no case is opened at all.</li>
+  </ul>
+</div>
+
+<div class="section" id="masking">
+  <h2><span class="num">23</span> Server-side Masking</h2>
+  <p class="section-lead">Hiding a value in the interface is not privacy. The redaction happens before the response leaves the server.</p>
+
+  <p>An analyst's session is never sent the values it is not entitled to, so there is nothing to reveal with a browser console. Names become <code>R. Kumar</code>, counterparties and account numbers are redacted, and device identifiers are shortened to a stable handle. Each case response also declares what was withheld:</p>
+
+  <pre><code>"privacy": {
+  "level": "masked",
+  "redacted_fields": ["counterparty", "device_id", "entity_name"],
+  "note": "Identifiers masked for your role..."
+}</code></pre>
+
+  <h3>Free text is part of the surface</h3>
+  <p>Structured fields are the easy case. Case descriptions are prose — <em>"Rajesh Kumar — ₹3,00,000 payment to Apollo Hospitals"</em> — and would have leaked the very identifier the columns were hiding. So known entity names are replaced inside titles, descriptions and transaction text as well, before serialisation.</p>
+
+  <h3>Attribution comes from the session</h3>
+  <p>A decision used to record whatever name was typed into the form. It now records the authenticated identity, its user id and its role, alongside the rationale. The audit trail is the same idea: every sign-in, view, pipeline run, decision, settings change and refused request is written with the acting identity and can only be read back at the scope you hold.</p>
+
+  <div class="callout success">
+    <strong>Why this matters for a bank.</strong> "Who saw this customer's data, when, and why were they entitled to?" is a question supervisors ask, and it is unanswerable in most demos. Here it is a table.
+  </div>
+</div>
+
+</div><!-- /main -->
+</body>
+</html>
